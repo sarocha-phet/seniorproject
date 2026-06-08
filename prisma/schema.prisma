@@ -1,0 +1,235 @@
+// schema.prisma (UUID & Role Table Version)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Enums ---
+
+// ❌ ลบ enum UserRole ออกไปแล้ว
+
+enum ProjectStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PENDING_INSTRUCTOR
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AdvisorRole {
+  ADVISOR
+  CO_ADVISOR
+}
+
+enum Major {
+  ME
+  IE
+  LE
+  CE
+  MCE
+  AE
+}
+
+// --- Tables ---
+
+// ✅ เพิ่มตาราง Role แยกออกมา
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // เช่น "STUDENT", "ADVISOR", "INSTRUCTOR"
+  description String?  // คำอธิบายภาษาไทย
+
+  // ความสัมพันธ์กลับไปหา User
+  users       User[]
+
+  @@map("roles")
+}
+
+model User {
+  id             String    @id @default(uuid()) // เป็น UUID
+  username       String    @unique
+  passwordHash   String    @map("password_hash")
+  titlePrefix    String?   @map("title_prefix")
+  academicRank   String?   @map("academic_rank")
+  phdTitle       String?   @map("phd_title")
+  fullName       String?   @map("full_name")
+
+  firstName      String    @map("first_name")
+  lastName       String    @map("last_name")
+  email          String?   @unique
+  department     String?   
+  position       String? 
+   
+
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  // ✅ เชื่อมความสัมพันธ์แบบ Many-to-Many กับตาราง Role
+  roles          Role[]
+
+  // Relations อื่นๆ
+  projects           ProjectMember[]     
+  advisedProjects    ProjectAdvisor[]    
+  instructedSubjects SubjectInstructor[] 
+  
+  logs               ProjectLog[]        
+  comments           Comment[]
+  uploadedDocs       Document[]
+
+  @@map("users")
+}
+
+model Subject {
+  id           String   @id @default(uuid()) // เป็น UUID
+  subjectCode  String   @map("subject_code")
+  nameTh       String   @map("name_th")
+  nameEn       String?  @map("name_en")
+  semester     Int
+  academicYear Int      @map("academic_year")
+  major        Major
+  description  String?
+  isActive     Boolean  @default(true)
+  finalExamDate   DateTime? @map("final_exam_date")
+
+  projects     Project[]
+  instructors  SubjectInstructor[]
+
+  @@map("subjects")
+}
+
+model SubjectInstructor {
+  id        String @id @default(uuid()) // เป็น UUID
+  subjectId String @map("subject_id")
+  userId    String @map("user_id")
+
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subject_instructors")
+}
+
+model Project {
+  id           String        @id @default(uuid()) @map("project_id") // เป็น UUID
+  projectCode  String        @unique @map("project_code")
+  titleTh      String        @map("title_th")
+  titleEn      String?       @map("title_en")
+  abstract     String?       @db.Text
+  objectives   String?       @db.Text
+  academicYear Int           @map("academic_year")
+  status       ProjectStatus @default(DRAFT)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  subjectId    String?       @map("subject_id")
+  subject      Subject?      @relation(fields: [subjectId], references: [id])
+  scope        String?       @db.Text @map("project_scope")
+
+  members      ProjectMember[]
+  advisors     ProjectAdvisor[]
+  chapters     ProjectChapter[]
+  documents    Document[]
+  comments     Comment[]
+  logs         ProjectLog[]
+  meetingLogs  MeetingLog[] 
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String @id @default(uuid()) // เป็น UUID
+  projectId String @map("project_id")
+  userId    String @map("user_id")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+model ProjectAdvisor {
+  id        String      @id @default(uuid()) // เป็น UUID
+  projectId String      @map("project_id")
+  userId    String      @map("user_id")
+  role      AdvisorRole 
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("project_advisors")
+}
+
+model ProjectChapter {
+  id            String   @id @default(uuid()) // เป็น UUID
+  projectId     String   @map("project_id")
+  chapterNumber Int      @map("chapter_number") 
+  title         String?  
+  content       String?  @db.Text 
+  status        String   @default("draft") 
+  updatedAt     DateTime @updatedAt
+
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, chapterNumber]) 
+  @@map("project_chapters")
+}
+
+model ProjectLog {
+  id        String   @id @default(uuid()) // เป็น UUID
+  projectId String   @map("project_id")
+  userId    String   @map("user_id") 
+  action    String   
+  details   String?  @db.Text 
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id])
+
+  @@map("project_logs")
+}
+
+model Document {
+  id         String   @id @default(uuid()) @map("document_id") // เป็น UUID
+  projectId  String   @map("project_id")
+  uploaderId String   @map("uploader_id")
+  filePath   String   @map("file_path")
+  fileType   String   @map("file_type") 
+  status     String   @default("pending")
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploader   User    @relation(fields: [uploaderId], references: [id])
+
+  @@map("documents")
+}
+
+model Comment {
+  id        String   @id @default(uuid()) @map("comment_id") // เป็น UUID
+  projectId String   @map("project_id")
+  userId    String   @map("user_id")
+  message   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id])
+
+  @@map("comments")
+}
+
+model MeetingLog {
+  id        String   @id @default(uuid())
+  projectId String   @map("project_id")
+  topic     String?  
+  note      String?  @db.Text 
+  meetDate  DateTime @default(now()) @map("meet_date")
+  status    String   @default("APPROVED") 
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("meeting_logs")
+}
